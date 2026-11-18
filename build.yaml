@@ -1,0 +1,84 @@
+name: APK derle
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Proje dosyalarini olustur
+        run: |
+          cat > package.json <<'JSON'
+          {
+            "name": "countryball-arena",
+            "version": "1.0.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/android": "6.2.0",
+              "@capacitor/cli": "6.2.0",
+              "@capacitor/core": "6.2.0"
+            }
+          }
+          JSON
+          cat > capacitor.config.json <<'JSON'
+          {
+            "appId": "com.countryball.arena",
+            "appName": "Countryball Arena",
+            "webDir": "www",
+            "backgroundColor": "#0b0e14"
+          }
+          JSON
+          GAME="$(ls index*.html | head -1)"
+          echo "Oyun dosyasi: $GAME"
+          mkdir -p www
+          cp "$GAME" www/index.html
+      - name: Capacitor kur
+        run: |
+          npm install
+          npx cap add android
+      - name: Ikon uygula (varsa)
+        run: |
+          if [ -f icon-only.png ] && [ -f icon-foreground.png ] && [ -f icon-background.png ]; then
+            mkdir -p assets
+            cp icon-only.png icon-foreground.png icon-background.png assets/
+            npm install --no-save @capacitor/assets@3.0.5
+            npx capacitor-assets generate --android
+          else
+            echo "Ikon dosyalari yok, varsayilan ikon kullanilacak."
+          fi
+      - name: Yatay ve tam ekran ayarla
+        run: |
+          npx cap sync android
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's|<activity|<activity android:screenOrientation="sensorLandscape"|' $M
+          S=android/app/src/main/res/values/styles.xml
+          sed -i 's|<item name="windowNoTitle">true</item>|<item name="windowNoTitle">true</item><item name="android:windowFullscreen">true</item><item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>|' $S
+      - name: APK derle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: APK adini duzenle
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk countryball-arena.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: countryball-arena-apk
+          path: countryball-arena.apk
+      - name: Indirilebilir surum yayinla
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Countryball Arena v${{ github.run_number }}
+          files: countryball-arena.apk
+          make_latest: true
